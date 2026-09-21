@@ -15,3 +15,9 @@
  -pathlib
  -datetime
  -Thread
+
+ ## Main Function
+ The main function for this module is to assess threat from malicious file and software
+ using hash signature
+
+ ## implementation

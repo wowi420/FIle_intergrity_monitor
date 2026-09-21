@@ -22,10 +22,11 @@ with sqlite3.connect("data.db") as data:
     query = """
         CREATE TABLE IF NOT EXISTS List_file (
         file_name TEXT PRIMARY KEY,
-        file_size INTERGER,
+        file_size INTEGER,
         file_hash TEXT,
         modified TIMESTAMP,
-        access TIMESTAMP)
+        access TIMESTAMP,
+        time_alert TIMESTAMP)
         """
     cursor.execute(query)
     data.commit()
@@ -39,7 +40,7 @@ def hasher(data):
     except FileNotFoundError:
         pass
 def get_all_files(): #formerly known as base_line_scan()
-    EXCLUDE_DIRS = {".cache", ".git", "node_modules", ".venv", "__pycache__","cache",}
+    EXCLUDE_DIRS = {".cache", ".git", "node_modules", ".venv", "__pycache__","cache",".config",".mozila", ".local"}
     for z in config["file"]:
         root = Path(z)
         for i in root.rglob("*"):
@@ -53,10 +54,11 @@ def get_all_files(): #formerly known as base_line_scan()
 create_table_query = '''
 CREATE TABLE IF NOT EXISTS List_file (
         file_name TEXT PRIMARY KEY,
-        file_size INTERGER,
+        file_size INTEGER,
         file_hash TEXT,
         modified TIMESTAMP,
-        access TIMESTAMP
+        access TIMESTAMP,
+        time_alert TIMESTAMP
     )    
     '''
 
@@ -71,12 +73,12 @@ def base_scan():
         hashed = hasher(file)
         time = datetime.fromtimestamp(file.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
         time_access = datetime.fromtimestamp(file.stat().st_atime).strftime("%Y-%m-%d %H:%M:%S")
-        records.append((str(file),file.stat().st_size, hashed, time, time_access))
+        records.append((str(file),file.stat().st_size, hashed, time, time_access, 0))
     with sqlite3.connect("data.db") as data:
         cursor = data.cursor()
         insert_query = '''
-        INSERT OR REPLACE INTO List_file(file_name,file_size, file_hash, modified, access)
-        VALUES(?,?,?,?,?)
+        INSERT OR REPLACE INTO List_file(file_name,file_size, file_hash, modified, access, time_alert)
+        VALUES(?,?,?,?,?,?)
         '''
         cursor.executemany(insert_query, records)
 
@@ -115,7 +117,7 @@ def checker():
 
 def peeker(file):
     datp = Path(file)
-    query = f"""
+    query = """
         SELECT file_hash, file_size, modified
         FROM List_file
         where file_name = CAST(? AS TEXT)
@@ -138,49 +140,60 @@ def peeker(file):
         except FileNotFoundError:
             logger.warning(f"cannot found file: {file}")
             
-def time_checker():
-    last_scan = config["time"]
-    last_scan_time = datetime.strftime(last_scan,"%Y-%m-%d %H:%M:%S")
-    time_now = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
-    delta_time = time_now- last_scan_time
-    if delta_time.total_seconds() >= 86400:
-        with open("config.yml", "w") as mark:
-            config["time"] = str(datetime.now())
-            yaml.dump(config,mark,default_flow_style=False, sort_keys=False)
+def time_checker(file): #this function is complicated, a lot of bugs need to fix/replace the yaml.dump
+    with sqlite3.connect("data.db") as conn:
+        query = """
+                SELECT time_alert
+                FROM List_file
+                WHERE file_name = CAST(? AS TEXT)
+                """
+        cursor = conn.cursor()
+        cursor.execute(query, [str(file)])
+        diff = datetime.now()
+        try:
+            for i in cursor.fetchone():
+                tiime = i
+        except Exception as e:
+            logger.info(f"{file}: {e}")
+            return False
+        delta_time = int(diff.timestamp()) - tiime
+        if int(delta_time) >= 2 or tiime == 0:
+            query = f"""
+                    UPDATE List_file
+                    SET time_alert = ?
+                    Where file_name = ?
+                    """
+            cursor.execute(query, (diff.timestamp(), str(file)))
+            conn.commit()
             return True
+        else:
+            conn.commit()
+            return False
+
 
 
 class Watcher_File(FileSystemEventHandler):
     def __init__(self):
         super().__init__()
-        self.counter = {}
     def on_closed(self, event):
         if not event.is_directory:
-            counter=self.counter
-            if counter.get(event.src_path) == None:
-                counter[event.src_path] = 0
-            
-            elif counter.get(event.src_path) == 0:
+            if time_checker(event.src_path):
                 peeker(event.src_path)
-                counter[event.src_path] += 1
             else:
-                counter[event.src_path] = counter.get(event.src_path)+1
+                pass
     def on_created(self, event):
         if not event.is_directory:
-            counter = self.counter
-            if counter.get(event.src_path) == None:
-                counter[event.src_path] = 0
-            elif counter.get(event.src_path) == 0:
-                logger.warning(f"ooh a new file {event.src_path}")
+            if time_checker(event.src_path):
+                logger.warning(f"a new file created: {event.src_path}")
                 peeker(event.src_path)
             else:
                 pass
     #on deletd function are still in development
     def on_deleted(self, event):
         if event.is_directory:
-            logger.warning(f"warning {event.src_path} is deleted")
+            logger.warning(f"directory: {event.src_path} is deleted")
         if not event.is_directory:
-            pass
+            logger.warning(f"file: {event.src_path} has been removed")
 
 
 
@@ -198,7 +211,7 @@ if __name__ == "__main__":
             else:
                 pass
             butch.commit()
-    except KeyboardInterrupt:
+    except Exception:
         print(f"\n bro what the fuck")
 
     try:
@@ -206,14 +219,16 @@ if __name__ == "__main__":
         observer = Observer()
         for i in config["file"]:
             observer.schedule(event_handler, i, recursive=True)
-            observer.start()
-
+        observer.start()
+        last_check =0
+        check_interval = 900
         while True:
-            time.sleep(900)
-            logger.info("running daily checking") #using print with the same reason
-            checker()
-        #the commented code are still in repair, this one have have formatting problem
+            if time.time() - last_check >= check_interval:
+                logger.info("running daily checking") 
+                checker()
+                last_check = time.time()
 
-    except KeyboardInterrupt:
+    except Exception as e:
         observer.stop()
-        print("\n bro what the fuck")
+        observer.join()
+        print(f"\n operation stopped {e}")
