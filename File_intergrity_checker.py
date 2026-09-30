@@ -95,7 +95,7 @@ def checker():
             fiile = Path(file)
             cursor.execute(ret_query, [str(file)]) #
             tada = cursor.fetchall()
-            time = datetime.fromtimestamp(fiile.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            timme = datetime.fromtimestamp(fiile.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
             time_accsess = datetime.fromtimestamp(fiile.stat().st_atime).strftime("%Y-%m-%d %H:%M:%S")
      #in this block of code check if this file already registered within db, need to learn sqlite
             for i in tada:
@@ -104,7 +104,7 @@ def checker():
                         print(f"this {file} is sus")
                 elif time != i[2]:
                     print(f"{file} has been modified")
-                    logger.info(f"{file} modified at {time}")
+                    logger.info(f"{file} modified at {timme}")
                 elif time_accsess != i[3]:
                     print(f"{file} base been accessed at {time_accsess}")
 
@@ -127,8 +127,8 @@ def peeker(file):
             cursor = data.cursor()
             cursor.execute(query, [str(file)])
             feedback = cursor.fetchone()
-            time = datetime.fromtimestamp(datp.stat().st_mtime)
-            time_pretty=time.strftime("%Y-%m-%d %H:%M:%S")
+            tilme = datetime.fromtimestamp(datp.stat().st_mtime)
+            time_pretty=tilme.strftime("%Y-%m-%d %H:%M:%S")
             if feedback == None:
                 logger.warning(f"{file} is unregistered file, be wary")
             else:
