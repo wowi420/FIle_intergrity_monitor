@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+import httpx
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, format='%(message)s', level=logging.WARN)
 
@@ -170,7 +171,17 @@ def time_checker(file): #this function is complicated, a lot of bugs need to fix
             conn.commit()
             return False
 
-
+def send_report(file_path, flag, event_type, oldshasha, newshasha):
+    event = {
+        "agent_id" : "FIM_1",
+        "time_stamp" : datetime.now(), 
+        "et" : event_type,
+        "fl" : flag,
+        "content" : {"path" : file_path,
+                     "oldhash" : oldshasha,
+                     "newhash" : newshasha
+                     }
+    }
 
 class Watcher_File(FileSystemEventHandler):
     def __init__(self):
@@ -228,7 +239,11 @@ if __name__ == "__main__":
                 checker()
                 last_check = time.time()
 
+    except KeyboardInterrupt:
+        observer.stop()
+        observer.join()
+        logger.warning(f"\n operation stopped")
     except Exception as e:
         observer.stop()
         observer.join()
-        print(f"\n operation stopped {e}")
+        logger.warning(f"\n {e}")
